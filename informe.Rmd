@@ -1,0 +1,88 @@
+---
+title: "Modelización de series de tiempo de precios mayoristas de manzana de Uruguay."
+author: "Emanuelle Marsella, Maximiliano Saldaña"
+date: "Junio 2022"
+output: 
+  pdf_document:
+    toc: no
+    number_sections: true
+header-includes:
+  - \usepackage{float}
+  - \usepackage[spanish]{babel} 
+bibliography: bibliografia.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  include = FALSE,
+  warning = FALSE,
+  out.width = '80%',
+  fig.align="center")
+```
+
+```{r libs}
+library(forecast)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(gridExtra)
+```
+
+```{r datos}
+precios_manzana <- read_csv("precios_uam_long.csv")  %>% 
+  filter(producto == "Manzana")
+
+# Se pasa a formato ts
+manzana <- ts(precios_manzana$precio_promedio, start = c(2013, 1), end = c(2022, 5) , frequency = 12)
+
+```
+
+
+
+# Resumen ejecutivo
+
+# Análisis descriptivo
+
+La serie a ser estudiada es la de precios promedio mensuales del kilo de manzana en la Unidad Agroalimentaria Metropolitana (ex Mercado Modelo). Los precios de los distintos rubros transados en este mercado mayorista de frutas y hortalizas son relevados por el Observatorio Granjero dos veces a la semana, los lunes y los jueves, mediante encuestas a los distintos vendedores informantes. Se relevan precios por distintas variedades, calidades y calibres. Empleando los distintos precios obtenidos los técnicos del Observatorio llegan a un precio de referencia por consenso.
+
+Se cuentan con los datos desde enero de 2013 a mayo de 2022  y se considerará el promedio mensual de los precios, por lo que se cuentan con 113 observaciones. En lugar de emplear los datos bisemanales o el promedio semanal se opta por la frecuencia mensual debido a la dificultad de emplear el herramental de los modelos SARIMA para tales tipos de series, en particular para el tratamiento de la estacionalidad.
+
+
+```{r plot_precios, fig.cap="Serie de precios mensuales del Kg de manzana en pesos Uruguayos.", include = TRUE}
+autoplot(manzana) +
+  theme_bw() +
+  labs(x = "Tiempo (Años)",  y = "Precio promedio ($UY por Kg)" )
+```
+
+En la figura \@ref(fig:plot_precios) se presenta el gráfico de la serie a ser trabajada. La impresión inicial que da es que la serie presenta cierto patrón estacional anual, donde los precios comienzan altos para luego descender hasta el segundo trimeste de los años y luego tienden a elevarse hasta el final de año. Esto se puede observar mejor en el gráfico de los precios coloreados por año y el gráfico de la evolución de los precios año a año por mes de la figura \@ref(fig:plot_precios_seas). El año 2020 presenta precios atípicamente altos, lo cual se puede deber al impacto económico que causó la pandemia de Coronavirus, que llegó a nuestro país en dicho año. Ya para 2021 y lo que va de 2022 parece haber una vuelta a patrones previos. Todo esto deberá ser tenido en cuenta a la hora de la especificación de un modelo del tipo ARIMA/SARIMA.
+
+```{r plot_precios_seas, fig.cap="Serie de precios mensuales del Kg de manzana en pesos Uruguayos.", include = TRUE}
+a <- ggseasonplot(manzana) +
+  theme_bw() +
+  labs(x = "Tiempo (Mes)",  y = "Precio promedio ($UY por Kg)", title = NULL, color = "Año")
+
+b <- ggsubseriesplot(manzana) +
+  theme_bw() +
+  labs(x = "Tiempo (Mes)",  y = "Precio promedio ($UY por Kg)")
+
+
+grid.arrange(a, b, nrow = 1)
+```
+
+
+# Metodología y resultados
+
+Resulta de interés que el modelo ajustado a la serie sea de utilidad para la predicción. Para poder evaluar la calidad de las predicciones, una manera que busca replicar el proceso de obtención de nuevos datos es dividir la serie en una muestra de entrenamiento y una de prueba. La primera se emplea para ajustar el modelo, a partir del cual se realizarán las predicciones. Se dejan las últimas 12 observaciones para la muestra de prueba, que son los precios que van desde junio de 2021 a mayo de 2022. Debe tenerse en cuenta que el periódo del final de la muestra de entrenamiento y también la muestra de prueba están enmarcados en el contexto de gran incertidumbre que presenta la pandemia, por lo que deberá tenerse especial cuidado con el tratamiento de atípicos y las conclusiones que se tomen sobre las predicciones.
+
+```{r}
+modelo <- auto.arima(manzana)
+```
+
+
+
+
+# Conclusiones
