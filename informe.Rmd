@@ -58,7 +58,7 @@ autoplot(manzana) +
   labs(x = "Tiempo (Años)",  y = "Precio promedio ($UY por Kg)" )
 ```
 
-En la figura \@ref(fig:plot_precios) se presenta el gráfico de la serie a ser trabajada. La impresión inicial que da es que la serie presenta cierto patrón estacional anual, donde los precios comienzan altos para luego descender hasta el segundo trimeste de los años y luego tienden a elevarse hasta el final de año. Esto se puede observar mejor en el gráfico de los precios coloreados por año y el gráfico de la evolución de los precios año a año por mes de la figura \@ref(fig:plot_precios_seas). El año 2020 presenta precios atípicamente altos, lo cual se puede deber al impacto económico que causó la pandemia de Coronavirus, que llegó a nuestro país en dicho año. Ya para 2021 y lo que va de 2022 parece haber una vuelta a patrones previos. Todo esto deberá ser tenido en cuenta a la hora de la especificación de un modelo del tipo ARIMA/SARIMA.
+En la figura \@ref(fig:plot_precios) se presenta el gráfico de la serie a ser trabajada. La impresión inicial que da es que la serie presenta cierto patrón estacional anual, donde los precios comienzan altos para luego descender hasta el segundo trimeste de los años y luego tienden a elevarse hasta el final de año. Esto se puede observar mejor en el gráfico de los precios coloreados por año y el gráfico de la evolución de los precios año a año por mes de la figura \@ref(fig:plot_precios_seas). El año 2020 presenta precios atípicamente altos y un comportamiento marcadamente distinto al de los otros años, no se observa la caída inicial de precios sino un aumento sostenido. Esto se puede deber al impacto económico que causó la pandemia de Coronavirus, que llegó a nuestro país en dicho año. Ya para 2021 y lo que va de 2022 parece haber una vuelta a patrones previos. Todo esto deberá ser tenido en cuenta a la hora de la especificación de un modelo del tipo ARIMA/SARIMA.
 
 ```{r plot_precios_seas, fig.cap="Serie de precios mensuales del Kg de manzana en pesos Uruguayos.", include = TRUE}
 a <- ggseasonplot(manzana) +
@@ -76,11 +76,88 @@ grid.arrange(a, b, nrow = 1)
 
 # Metodología y resultados
 
-Resulta de interés que el modelo ajustado a la serie sea de utilidad para la predicción. Para poder evaluar la calidad de las predicciones, una manera que busca replicar el proceso de obtención de nuevos datos es dividir la serie en una muestra de entrenamiento y una de prueba. La primera se emplea para ajustar el modelo, a partir del cual se realizarán las predicciones. Se dejan las últimas 12 observaciones para la muestra de prueba, que son los precios que van desde junio de 2021 a mayo de 2022. Debe tenerse en cuenta que el periódo del final de la muestra de entrenamiento y también la muestra de prueba están enmarcados en el contexto de gran incertidumbre que presenta la pandemia, por lo que deberá tenerse especial cuidado con el tratamiento de atípicos y las conclusiones que se tomen sobre las predicciones.
+## Muestra de entrenamiento y de prueba
+
+Resulta de interés que el modelo ajustado a la serie sea de utilidad para la predicción. Para poder evaluar la calidad de las predicciones, una manera que busca replicar el proceso de obtención de nuevos datos es dividir la serie en una muestra de entrenamiento y una de prueba. La primera se emplea para ajustar el modelo, a partir del cual se realizarán las predicciones. Se dejan las últimas 12 observaciones para la muestra de prueba, que son los precios que van desde junio de 2021 a mayo de 2022. Debe tenerse en cuenta que el periodo del final de la muestra de entrenamiento y también la muestra de prueba están enmarcados en el contexto de gran incertidumbre que presenta la pandemia, por lo que deberá tenerse especial cuidado con el tratamiento de atípicos y las conclusiones que se tomen sobre las predicciones.
+
+```{r train_test}
+manzana_train <- window(manzana, end = c(2021, 5))
+manzana_test <- window(manzana, start = c(2021, 6))
+```
+
+## Identificación
+
+### Atípicos
+
+Como se mencionó anteriormente, a simple vista es posible identificar que la pandemia de Coronavirus tuvo un impacto sobre los precios, así que esto deberá ser incluido en la modelización. Una manera de tener en cuenta este efecto atípico es considerar que hay un cambio transitorio (TC por sus siglas en inglés), un suceso que tiene un efecto que perdura en la serie pero no es permanente.
 
 ```{r}
-modelo <- auto.arima(manzana)
+
 ```
+
+
+### Transformación logarítimica
+
+La transformación logarítmica de una serie de tiempo puede tener como resultado una reducción del error de predicción en el caso de que estabilice la varianza [@lutkepohl2009]. Esto se cumple en particular cuando la varianza aumenta con la media de la serie, lo cual no es el caso de los precios de manzana, que si bien presentan una heteroscedasticidad visible no parece haber una tendencia creciente marcada.
+
+```{r}
+BoxCox.lambda(manzana_train)
+```
+
+### Descomposición
+```{r descomp}
+
+# Ver si incluir y en qué parte
+
+descomp <- stl(manzana_train, s.window = "periodic")
+
+autoplot(descomp)
+```
+
+### Autocorrelación y autocorrelación parcial
+
+```{r}
+# Autocorrelación, serie original
+acf1 <- ggAcf(manzana_train, type = "correlation", plot = FALSE) 
+plot_acf1 <- autoplot(acf1) +
+  labs(title = NULL) +
+  theme_bw()
+
+# Autocorrelación parcial, serie original
+pacf1 <- ggAcf(manzana_train, type = "partial", plot = FALSE)
+plot_pacf1 <- autoplot(pacf1) +
+  labs(title = NULL) +
+  theme_bw()
+
+grid.arrange(plot_acf1, plot_pacf1)
+```
+
+
+
+
+
+
+```{r}
+modelo1 <- auto.arima(manzana_train)
+
+autoplot(forecast(modelo1, h = 12))
+
+r1 <- residuals(modelo1)
+sapply(1:24, function(i) Box.test(r1, lag = i, type = "Ljung-Box")$p.value)
+
+shapiro.test(r1)
+```
+
+## Estimación
+
+
+## Diagnóstico
+
+## Predicción
+
+
+
+
 
 
 
