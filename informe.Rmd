@@ -31,6 +31,7 @@ library(ggplot2)
 library(readr)
 library(gridExtra)
 library(tsoutliers)
+library(urca)
 ```
 
 ```{r datos}
@@ -75,22 +76,21 @@ grid.arrange(a, b, nrow = 1)
 ```
 
 
+
+
+```{r descomp}
+# Ver si incluir y en qué parte
+
+descomp <- stl(manzana, s.window = "periodic")
+
+autoplot(descomp) +
+  theme_bw()
+```
+
+
 # Metodología y resultados
 
 PLAN DE ACCIÓN:
-
-* MODELO SIN INTERVENCIONES
-
-* MODELO CON INTERVENCION MANUAL POR LA PANDEMIA
-
-* MODELO CON INTERVENCIONES OBTENIDAS POR METODOS DEL PAQUETE TSOUTLIERS
-
-* MODELO CON REMPLAZOS POR INTERPOLACIÓN CON TSOUTLIERS()
-
-
-## Muestra de entrenamiento y de prueba
-
-Resulta de interés que el modelo ajustado a la serie sea de utilidad para la predicción. Para poder evaluar la calidad de las predicciones, una manera que busca replicar el proceso de obtención de nuevos datos es dividir la serie en una muestra de entrenamiento y una de prueba. La primera se emplea para ajustar el modelo, a partir del cual se realizarán las predicciones. Se dejan las últimas 12 observaciones para la muestra de prueba, que son los precios que van desde junio de 2021 a mayo de 2022. Debe tenerse en cuenta que el periodo del final de la muestra de entrenamiento y también la muestra de prueba están enmarcados en el contexto de gran incertidumbre que presenta la pandemia, por lo que deberá tenerse especial cuidado con el tratamiento de atípicos y las conclusiones que se tomen sobre las predicciones.
 
 ```{r train_test}
 # Se divide en muestra de training y de test
@@ -98,12 +98,13 @@ manzana_train <- window(manzana, end = c(2021, 5))
 manzana_test <- window(manzana, start = c(2021, 6))
 ```
 
-## Identificación
+```{r modelo1}
+# MODELO SIN INTERVENCIONES
 
+## La transformación logarítmica no sería apropiada acá: la serie no aumenta en varianza con un aumento de media
+## y el lambda de la transformación Box-Cox es != 0
+BoxCox.lambda(manzana_train)
 
-### Autocorrelación y autocorrelación parcial
-
-```{r}
 # Autocorrelación, serie original
 acf1 <- ggAcf(manzana_train, type = "correlation", plot = FALSE) 
 plot_acf1 <- autoplot(acf1) +
@@ -117,32 +118,34 @@ plot_pacf1 <- autoplot(pacf1) +
   theme_bw()
 
 grid.arrange(plot_acf1, plot_pacf1)
+
+## Estos gráficos no resultan útiles para determinar si el proceso es trend stationary o difference stationary
+
+# Test de raices unitarias
+
+
+
+
+
+
+modelo1 <- auto.arima(manzana_train)
+
+autoplot(forecast(modelo1, h = 12))
+
+r1 <- residuals(modelo1)
+sapply(1:24, function(i) Box.test(r1, lag = i, type = "Ljung-Box")$p.value)
+
+shapiro.test(r1)
 ```
 
 
+* MODELO CON INTERVENCION MANUAL POR LA PANDEMIA
 
-### Transformación logarítimica
 
-La transformación logarítmica de una serie de tiempo puede tener como resultado una reducción del error de predicción en el caso de que estabilice la varianza [@lutkepohl2009]. Esto se cumple en particular cuando la varianza aumenta con la media de la serie, lo cual no es el caso de los precios de manzana, que si bien presentan una varianza que aumenta en el tiempo no parece haber una tendencia creciente clara. Por lo tanto, esta transformación no resultaría aconsejable de aplicar.  
-
-Para confirmar esto, se considera la transformación de Box-Cox, donde siendo $y$ la variable transformada y $x$ la variable a transformar:
-
-$$y_t = \begin{cases} \frac{x_t - 1}{\lambda} \,\,\, si \,\,\, \lambda \ne 0 \\ \ln x_t \,\,\, si \,\,\, \lambda = 0 \end{cases}$$
-
-Donde el parámetro $\lambda$ se estima por máxima verosimilitud. En el caso de la serie planteada, dicho parámetro toma el valor -0.59, por lo que la transformación logarítmica no resulta adecuada.
 
 ```{r}
-BoxCox.lambda(manzana_train)
-```
+# MODELO CON INTERVENCIONES OBTENIDAS POR METODOS DEL PAQUETE TSOUTLIERS
 
-
-### Atípicos: La pandemia
-
-Como se mencionó anteriormente, a simple vista es posible identificar que la pandemia de Coronavirus tuvo un impacto sobre los precios, así que esto deberá ser incluido en la modelización cuanto antes. Una manera de tener en cuenta este efecto atípico es considerar que hay un cambio transitorio (TC por sus siglas en inglés), un suceso que tiene un efecto que perdura en la serie pero no es permanente.
-
-Posteriormente se deberá poner a prueba la presencia de otros atípicos.
-
-```{r}
 # Estos son del tipo TC, ver como implementar
 # Un problema es que es complicado distinguir el efecto estacional del outlier en si
 covid_outliers <- outliers(type = "TC", ind = 88) 
@@ -161,43 +164,61 @@ autoplot(manzana_train_clean)
 ```
 
 
+
+* MODELO CON REMPLAZOS POR INTERPOLACIÓN CON TSOUTLIERS()
+
+
+
+
+
+
+
+<!-- Desarrollo del informe de acá en adelante -->
+
+## Muestra de entrenamiento y de prueba
+
+Resulta de interés que el modelo ajustado a la serie sea de utilidad para la predicción. Para poder evaluar la calidad de las predicciones, una manera que busca replicar el proceso de obtención de nuevos datos es dividir la serie en una muestra de entrenamiento y una de prueba. La primera se emplea para ajustar el modelo, a partir del cual se realizarán las predicciones. Se dejan las últimas 12 observaciones para la muestra de prueba, que son los precios que van desde junio de 2021 a mayo de 2022. Debe tenerse en cuenta que el periodo del final de la muestra de entrenamiento y también la muestra de prueba están enmarcados en el contexto de gran incertidumbre que presenta la pandemia, por lo que deberá tenerse especial cuidado con el tratamiento de atípicos y las conclusiones que se tomen sobre las predicciones.
+
+
+
+## Identificación
+
+
+### Autocorrelación y autocorrelación parcial
+
+
+### Transformación logarítimica
+
+La transformación logarítmica de una serie de tiempo puede tener como resultado una reducción del error de predicción en el caso de que estabilice la varianza [@lutkepohl2009]. Esto se cumple en particular cuando la varianza aumenta con la media de la serie, lo cual no es el caso de los precios de manzana, que si bien presentan una varianza que aumenta en el tiempo no parece haber una tendencia creciente clara. Por lo tanto, esta transformación no resultaría aconsejable de aplicar.  
+
+Para confirmar esto, se considera la transformación de Box-Cox, donde siendo $y$ la variable transformada y $x$ la variable a transformar:
+
+$$y_t = \begin{cases} \frac{x_t - 1}{\lambda} \,\,\, si \,\,\, \lambda \ne 0 \\ \ln x_t \,\,\, si \,\,\, \lambda = 0 \end{cases}$$
+
+Donde el parámetro $\lambda$ se estima por máxima verosimilitud. En el caso de la serie planteada, dicho parámetro toma el valor -0.59, por lo que la transformación logarítmica no resulta adecuada.
+
+
+
+
+### Atípicos: La pandemia
+
+Como se mencionó anteriormente, a simple vista es posible identificar que la pandemia de Coronavirus tuvo un impacto sobre los precios, así que esto deberá ser incluido en la modelización cuanto antes. Una manera de tener en cuenta este efecto atípico es considerar que hay un cambio transitorio (TC por sus siglas en inglés), un suceso que tiene un efecto que perdura en la serie pero no es permanente.
+
+Posteriormente se deberá poner a prueba la presencia de otros atípicos.
+
+
+
+
 ### Descomposición
 
-```{r descomp}
-# Ver si incluir y en qué parte
-
-descomp <- stl(manzana_train, s.window = "periodic")
-
-autoplot(descomp)
-```
 
 
 
 
 
 
-```{r}
-modelo1 <- auto.arima(manzana_train)
-
-autoplot(forecast(modelo1, h = 12))
-
-r1 <- residuals(modelo1)
-sapply(1:24, function(i) Box.test(r1, lag = i, type = "Ljung-Box")$p.value)
-
-shapiro.test(r1)
-```
 
 
-```{r}
-modelo2 <- auto.arima(log(manzana_train_clean))
-
-
-r2 <- residuals(modelo2)
-sapply(1:24, function(i) Box.test(r2, lag = i, type = "Ljung-Box")$p.value)
-
-shapiro.test(r2)
-autoplot(r2)
-```
 
 ## Estimación
 
