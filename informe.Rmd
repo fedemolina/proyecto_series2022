@@ -96,6 +96,9 @@ PLAN DE ACCIÓN:
 # Se divide en muestra de training y de test
 manzana_train <- window(manzana, end = c(2021, 5))
 manzana_test <- window(manzana, start = c(2021, 6))
+
+autoplot(manzana_train) +
+  theme_bw()
 ```
 
 ```{r modelo1}
@@ -106,66 +109,171 @@ manzana_test <- window(manzana, start = c(2021, 6))
 BoxCox.lambda(manzana_train)
 
 # Autocorrelación, serie original
-acf1 <- ggAcf(manzana_train, type = "correlation", plot = FALSE) 
+acf1 <- ggAcf(manzana_train, type = "correlation", plot = FALSE, lag = 36) 
 plot_acf1 <- autoplot(acf1) +
   labs(title = NULL) +
   theme_bw()
 
+## Parecería que hay un decaimiento exponencial, pero en torno al lag 24 (2 años) vuelven a 
+## haber autocorrelaciones significativas
+
 # Autocorrelación parcial, serie original
-pacf1 <- ggAcf(manzana_train, type = "partial", plot = FALSE)
+pacf1 <- ggAcf(manzana_train, type = "partial", plot = FALSE,lag = 36)
 plot_pacf1 <- autoplot(pacf1) +
   labs(title = NULL) +
   theme_bw()
 
 grid.arrange(plot_acf1, plot_pacf1)
 
-## Estos gráficos no resultan útiles para determinar si el proceso es trend stationary o difference stationary
+## En cualquier caso, estos gráficos no resultan definitivos para determinar si el proceso es trend stationary o difference stationary
 
 # Test de raices unitarias
+test_df_mod1 <- ur.df(manzana_train)
+summary(test_df_mod1)
+## No rechazamos la hipótesis nula de que hay una raíz unitaria
+
+## Probamos con una primera diferencia
+manzana_train_diff <- diff(manzana_train)
+
+autoplot(manzana_train_diff)
+
+## El problema va a estar con las caídas abruptas a comienzos de los años
+## En particular 2017 y 2021
+
+# Autocorrelación
+acf1_diff <- ggAcf(manzana_train_diff, type = "correlation", plot = FALSE, lag = 36) 
+plot_acf1_diff <- autoplot(acf1_diff) +
+  labs(title = NULL) +
+  theme_bw()
+
+# Autocorrelación parcial, serie diferenciada
+pacf1_diff <- ggAcf(manzana_train_diff, type = "partial", plot = FALSE,lag = 36)
+plot_pacf1_diff <- autoplot(pacf1_diff) +
+  labs(title = NULL) +
+  theme_bw()
+
+grid.arrange(plot_acf1_diff, plot_pacf1_diff)
+
+## Ahora queda el efecto del primer lag y del 24. En la PACF se aprecian autocorrelaciones positivas para los dos primeros lags
+
+# Test de raices unitarias
+test_df_mod1_diff <- ur.df(manzana_train_diff)
+summary(test_df_mod1_diff)
+
+## Rechazamos la hipótesis de raíces unitarias
+
+
+# MODELO CON INTERVENCION MANUAL POR LA PANDEMIA
+
+```
 
 
 
 
 
 
-modelo1 <- auto.arima(manzana_train)
 
-autoplot(forecast(modelo1, h = 12))
 
-r1 <- residuals(modelo1)
-sapply(1:24, function(i) Box.test(r1, lag = i, type = "Ljung-Box")$p.value)
+```{r}
+# MODELO ELEGIDO MEDIANTE CRITERIOS DE INFORMACIÓN
 
+# Identificación y estimación ----------------------------------------
+modelo2 <- auto.arima(manzana_train)
+
+# Diagnóstico -------------------------------------------------------
+r2 <- residuals(modelo2)
+
+## Gráfico de los residuos: los outliers causarán problemas con la normalidad
+autoplot(r1)
+
+## Prueba de Ljung-Box
+p_valores_box <- tibble(
+  lag = 1:24, 
+  p_valores = sapply(1:24, function(i) Box.test(r1, lag = i, type = "Ljung-Box")$p.value)
+  )
+
+## No se rechaza la hipótesis nula de autocorrelación
+p_valores_box %>% 
+  ggplot() +
+  geom_point(aes(lag, p_valores))+
+  theme_bw()
+
+## Test de normalidad de Shapiro-Wilks
 shapiro.test(r1)
 ```
 
 
-* MODELO CON INTERVENCION MANUAL POR LA PANDEMIA
+```{r}
+# MODELO CON INTERVENCIONES SELECCIONADAS POR TSO
 
+# Identificación y estimación -----------------------------------------------------------
+modelo_tso <- tso(manzana_train)
+
+# Diagnóstico ---------------------------------------------------------------------------
+
+r3 <- residuals(modelo_tso$fit)
+
+## Gráfico de los residuos: los outliers siguen causando problemas con la normalidad
+autoplot(r3)
+
+## Prueba de Ljung-Box
+p_valores_box_tso <- tibble(
+  lag = 1:24, 
+  p_valores = sapply(1:24, function(i) Box.test(r3, lag = i, type = "Ljung-Box")$p.value)
+  )
+
+## No se rechaza la hipótesis nula de no autocorrelación
+p_valores_box_tso %>% 
+  ggplot() +
+  geom_point(aes(lag, p_valores))+
+  theme_bw()
+
+## Test de normalidad de Shapiro-Wilks
+shapiro.test(r3)
+
+## Se sigue rechazando la normalidad
+```
 
 
 ```{r}
 # MODELO CON INTERVENCIONES OBTENIDAS POR METODOS DEL PAQUETE TSOUTLIERS
 
-# Estos son del tipo TC, ver como implementar
-# Un problema es que es complicado distinguir el efecto estacional del outlier en si
-covid_outliers <- outliers(type = "TC", ind = 88) 
-
-covid_outliers_x <- outliers.effects(covid_outliers, n = 101, delta = 0.9, freq = 12)
-
-plot(covid_outliers_x, type = "l")
-
-
-out_forecast <- tsoutliers(manzana_train)
-
+## Se identifican los outliers y se sustituyen con una interpolación lineal
 manzana_train_clean <- tsclean(manzana_train)
 
-
 autoplot(manzana_train_clean)
+
+# Identificación y estimación ----------------------------------------------------
+modelo_clean <- auto.arima(manzana_train_clean)
+
+# Diagnóstico ---------------------------------------------------------------------------
+
+r4 <- residuals(modelo_clean)
+
+## Gráfico de los residuos: los outliers todavía presentes
+autoplot(r4)
+
+## Prueba de Ljung-Box
+p_valores_box_clean <- tibble(
+  lag = 1:24, 
+  p_valores = sapply(1:24, function(i) Box.test(r4, lag = i, type = "Ljung-Box")$p.value)
+  )
+
+## No se rechaza la hipótesis nula de no autocorrelación
+p_valores_box_clean %>% 
+  ggplot() +
+  geom_point(aes(lag, p_valores))+
+  theme_bw()
+
+## Test de normalidad de Shapiro-Wilks
+shapiro.test(r4)
+
+## Se rechaza la hipótesis nula de normalidad
+
 ```
 
 
 
-* MODELO CON REMPLAZOS POR INTERPOLACIÓN CON TSOUTLIERS()
 
 
 
